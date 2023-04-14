@@ -16,10 +16,10 @@
 # htseq-count
 
 # To run this code we used a 64 core server with 5GB RAM/core (= 320GB RAM). When running this code as such you need at least 12 cores and 30-40GB RAM. 
-# Tune down parallelization if you do not have these resources. Indexing the reference genome is the most memory intensive step, this can be circumvented 
+# Tune down parallelization parameters if you do not have these resources. Indexing the reference genome is the most memory intensive step, this can be circumvented 
 # by downloading an readily available pre-made index.
 
-# Note: don't forget to download the Acc_List.txt file from the github folder and put it in the directory you create for this analysis.
+# Note: don't forget to download the Acc_List.txt & Adapters.fa file from the github folder and put it in the directory you create for this analysis.
 # Optional code, e.g. to obtain untrimmed results will be included, however will remain "commented out" since this code is not required for the final analysis.
 
 

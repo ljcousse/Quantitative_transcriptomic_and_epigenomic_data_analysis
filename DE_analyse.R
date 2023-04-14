@@ -1,6 +1,42 @@
-##############
-# DE_analyse #
-##############
+##################
+##              ##
+##  DE_analyse  ##
+##              ##
+##################
+
+# This script includes code to perform differential expression analyses reported on in the manuscript
+# Data files used in this scripts can be obtained by running the "fastq2counts.bash".
+
+# The first part of the code serves to load data, libraries and construct some general annotation and parameters.
+
+# The second part contains differential expression analysis in the following structure:
+# - Gene level
+#   - TMM
+#     - non-filtered
+#     - filtered
+#   - Quantile normalisation
+#     - non-filtered
+#     - filtered
+#   - Library size normalisation
+#     - non-filtered
+#     - filtered
+# - Exon level
+#   - TMM
+#     - non-filtered
+#     - filtered
+#   - Quantile normalisation
+#     - non-filtered
+#     - filtered
+# - Gene level
+#   - Analysis without voom
+#   - Analysis without sample weights
+
+# The third and last part contains listing of several numbers and metrics reported in the manuscript
+# as well as plots generated for the manuscript.
+
+#################
+# Load packages #
+#################
 
 library(edgeR)
 library(limma)
@@ -8,74 +44,56 @@ library(biomaRt)
 library(plotrix)
 library(BSDA)
 
-##############
-# DE_analyse #
-##############
 
+#############
+# Load data #
+#############
 
+# Set working directory to directory where data files are present
 setwd("C:/Users/Louis Coussement/OneDrive/Louis/AAP/Quantitative_transcriptomics_and_epigenomics_data-analysis/")
 
+# Processed data was downloaded from GEO to retrieve column names
 counts_GEO <- read.table(file="countsGEO.txt",header=T,row.names = 1,stringsAsFactors = F)
 
-counts <- read.table(file="counts.txt",header=F,row.names = 1,stringsAsFactors = F)
-counts <- counts[-((nrow(counts)-4):nrow(counts)),]
-
-counts_exon <- read.table(file="counts_exon.txt",header=F,row.names = 1,stringsAsFactors = F)
-counts_exon <- counts_exon[-((nrow(counts_exon)-4):nrow(counts_exon)),]
-
+# Load data, gene level (trimmed)
 counts_trim <- read.table(file="counts_trim_bis.txt",header=F,row.names = 1,stringsAsFactors = F)
+# remove htseq-count summary lines
 counts_trim <- counts_trim[-((nrow(counts_trim)-4):nrow(counts_trim)),]
 
+# Load data, exon level (untrimmed)
 counts_exon_trim <- read.table(file="counts_exon_trim_bis.txt",header=F,row.names = 1,stringsAsFactors = F)
+# remove htseq-count summary lines
 counts_exon_trim <- counts_exon_trim[-((nrow(counts_exon_trim)-4):nrow(counts_exon_trim)),]
 
-samp1_bis <- read.table("test.txt",header=F,row.names = 1)
-samp1_bis <- samp1_bis[-((nrow(samp1_bis)-4):nrow(samp1_bis)),]
-
-not_equal <- cbind(counts_trim[counts_trim[,1]!=samp1_bis,1],samp1_bis[counts_trim[,1]!=samp1_bis])
-rownames(not_equal) <- rownames(counts_trim)[counts_trim[,1]!=samp1_bis]
-rRNA <- read.table(file="rrna.txt",header=T,stringsAsFactors = F,sep="\t")
-
-colnames(counts) <- colnames(counts_GEO)
-colnames(counts_exon) <- colnames(counts_GEO)
+# Set column names for objects
 colnames(counts_trim) <- colnames(counts_GEO)
 colnames(counts_exon_trim) <- colnames(counts_GEO)
 
-
+# Check dimension and data
 dim(counts_GEO)
-dim(counts)
-dim(counts_exon)
-head(counts)
-head(counts_exon)
 
 dim(counts_trim)
 dim(counts_exon_trim)
 head(counts_trim)
 head(counts_exon_trim)
 
-colSums(counts_GEO)
-colSums(counts)
-colSums(counts_exon)
 
-colSums(counts)/colSums(counts_GEO)
-colSums(counts_exon)/colSums(counts_GEO)
+###############################
+# Remove rRNA lines from data #
+###############################
 
-# counts[sort(rowMeans(counts),index.return=T,decreasing = T)$ix[1:15],]
-# counts_GEO[sort(rowMeans(counts_GEO),index.return=T,decreasing = T)$ix[1:10],]
-# which(names(head(sort(rowMeans(counts),decreasing = T)))%in%rRNA$Gene.stable.ID)
+# load list with rRNA genes 
+rRNA <- read.table(file="rrna.txt",header=T,stringsAsFactors = F,sep="\t")
 
+# remove rRNA genes 
 dim(counts_trim)
 counts_trim <- counts_trim[!(rownames(counts_trim)%in%rRNA$Gene.stable.ID),]
 dim(counts_trim)
 
 
-# object_olivier <- DGEList(counts_trim)
-# object_olivier <- calcNormFactors(object_olivier)
-# counts_dge <- object_olivier
-# save(counts_dge,file="Data_DGElist.Rda")
-# object_olivier <- cpm(object_olivier,log=T)
-# counts_norm <- object_olivier
-# save(counts_norm,list=c("counts_norm"),file="Data_normCounts.Rda")
+########################################
+# Extract gene annotation from biomaRt #
+########################################
 
 ## Get annotation
 if(!file.exists("Genes.Rda")){
@@ -89,10 +107,15 @@ if(!file.exists("Genes.Rda")){
 }
 
 
-## Make annotation for design later on
+#######################
+# Predefine pramaters #
+#######################
+
+# Make annotation for design later on
 individuals <- factor(unlist(strsplit(colnames(counts),"\\_"))[1:44*3-1])
 cvst <- factor(unlist(strsplit(colnames(counts),"\\_"))[1:44*3])
 
+# Set cpm cutoff for filtering
 cutoff_filter <- 0.2
 
 
@@ -161,54 +184,6 @@ dev.off()
 jpeg("MAplot_TMM_nf.jpg")
 plot(rowMeans(countspm_TMM_nf),rowMeans(countspm_TMM_nf[,23:44])-rowMeans(countspm_TMM_nf[,1:22]),pch=".",main="MA plot",xlab="A",ylab="M")
 dev.off()
-
-
-
-## Unpaired analysis
-##############
-
-## Make Design
-design_TMM_nf <- model.matrix(~cvst)
-rownames(design_TMM_nf) <- colnames(y_TMM_nf)
-
-## Build Model
-jpeg("limmatrend_TMM_nf.jpg")
-v_TMM_nf <- voomWithQualityWeights(y_TMM_nf, design_TMM_nf,plot=T)
-dev.off()
-fit_TMM_nf <- lmFit(v_TMM_nf, design_TMM_nf)
-fit_TMM_nf <- eBayes(fit_TMM_nf)
-res_TMM_nf <- topTable(fit_TMM_nf, coef="cvsttumor", n=nrow(v_TMM_nf))
-# coef="cvsttumor" => tumor vs. controle, see "design" object 
-
-## MAplot
-jpeg("MAplot_TMM_res_nf.jpg")
-# limma::plotMA(fit_TMM_nf)
-# MAplot: all data points
-plot(rowSums(v_TMM_nf$E)[rownames(res_TMM_nf)],
-       res_TMM_nf$logFC,pch=16,cex=0.6)
-# MA-plot: significant loci
-points(rowSums(v_TMM_nf$E)[rownames(res_TMM_nf)[res_TMM_nf$adj.P.Val<0.05]],
-       res_TMM_nf$logFC[res_TMM_nf$adj.P.Val<0.05],pch=16,col="red",cex=0.6)
-# X-axis
-abline(0,0) 
-dev.off()
-
-## Volcano plot
-jpeg("Volcano_TMM_res_nf.jpg")
-plot(res_TMM_nf$logFC,-log10(res_TMM_nf$adj.P.Val),pch=16,cex=0.2,xlab="logFC",ylab="-log10(FDR)") 
-points(res_TMM_nf$logFC[abs(res_TMM_nf$logFC)>1 & -log10(res_TMM_nf$adj.P.Val)>4],
-       -log10(res_TMM_nf$adj.P.Val)[abs(res_TMM_nf$logFC)>1 & -log10(res_TMM_nf$adj.P.Val)>4],pch=16,col="red",cex=0.6)
-title("Volcano plot")
-dev.off()
-
-## P-value distribution
-jpeg("Pdistr_TMM_res_nf.jpg")
-hist(res_TMM_nf$P.Value,main="Unfiltered Data",xlab="P-values")
-dev.off()
-
-
-## Paired analysis
-##############
 
 ## Make Design
 designP_TMM_nf <- model.matrix(~individuals+cvst) #individuals as well
@@ -307,53 +282,6 @@ jpeg("MAplot_TMM_f.jpg")
 plot(rowMeans(countspm_TMM_f),rowMeans(countspm_TMM_f[,23:44])-rowMeans(countspm_TMM_f[,1:22]),pch=".",main="MA plot",xlab="A",ylab="M")
 dev.off()
 
-
-## Unpaired analysis
-##############
-
-## Make Design
-design_TMM_f <- model.matrix(~cvst)
-rownames(design_TMM_f) <- colnames(y_TMM_f)
-
-## Build Model
-jpeg("limmatrend_TMM_f.jpg")
-v_TMM_f <- voomWithQualityWeights(y_TMM_f, design_TMM_f,plot=T)
-dev.off()
-fit_TMM_f <- lmFit(v_TMM_f, design_TMM_f)
-fit_TMM_f <- eBayes(fit_TMM_f)
-res_TMM_f <- topTable(fit_TMM_f, coef="cvsttumor", n=nrow(v_TMM_f))
-# coef="cvsttumor" => tumor vs. controle, see "design" object 
-
-## MAplot
-jpeg("MAplot_TMM_res_f.jpg")
-# limma::plotMA(fit_TMM_nf)
-# MAplot: all data points
-plot(rowSums(v_TMM_f$E)[rownames(res_TMM_f)],
-     res_TMM_f$logFC,pch=16,cex=0.6)
-# MA-plot: significant loci
-points(rowSums(v_TMM_f$E)[rownames(res_TMM_f)[res_TMM_f$adj.P.Val<0.05]],
-       res_TMM_f$logFC[res_TMM_f$adj.P.Val<0.05],pch=16,col="red",cex=0.6)
-# X-axis
-abline(0,0) 
-dev.off()
-
-## Volcano plot
-jpeg("Volcano_TMM_res_f.jpg")
-plot(res_TMM_f$logFC,-log10(res_TMM_f$adj.P.Val),pch=16,cex=0.2,xlab="logFC",ylab="-log10(FDR)") 
-points(res_TMM_f$logFC[abs(res_TMM_f$logFC)>1 & -log10(res_TMM_f$adj.P.Val)>4],
-       -log10(res_TMM_f$adj.P.Val)[abs(res_TMM_f$logFC)>1 & -log10(res_TMM_f$adj.P.Val)>4],pch=16,col="red",cex=0.6)
-title("Volcano plot")
-dev.off()
-
-## P-value distribution
-jpeg("Pdistr_TMM_res_f.jpg")
-hist(res_TMM_f$P.Value,main="Filtered Data",xlab="P-values")
-dev.off()
-
-
-## Paired analysis
-##############
-
 # Make Design
 designP_TMM_f <- model.matrix(~individuals+cvst) #individuals as well
 rownames(designP_TMM_f) <- colnames(y_TMM_f)
@@ -438,54 +366,6 @@ jpeg("MAplot_quant_nf.jpg")
 plot(rowMeans(countspm_quant_nf),rowMeans(countspm_quant_nf[,23:44])-rowMeans(countspm_quant_nf[,1:22]),pch=".",main="MA plot",xlab="A",ylab="M")
 dev.off()
 
-# ## Object Olivier
-# counts_nf <- counts_quant_nf
-# save(counts_nf,file="Data_DGElist_nf.Rda")
-# object_olivier <-voomWithQualityWeights(y_quant_nf, design_quant_nf,normalize.method = "quantile")$E
-# save(object_olivier,list=c("counts_quant_nf"),file="Data_normCounts_nf.Rda")
-
-## Unpaired analysis
-##############
-
-## Build Model
-jpeg("limmatrend_quant_nf.jpg")
-v_quant_nf <- voomWithQualityWeights(y_quant_nf, design_quant_nf,plot=T,normalize.method = "quantile")
-dev.off()
-fit_quant_nf <- lmFit(v_quant_nf, design_quant_nf)
-fit_quant_nf <- eBayes(fit_quant_nf)
-res_quant_nf <- topTable(fit_quant_nf, coef="cvsttumor", n=nrow(v_quant_nf))
-# coef="cvsttumor" => tumor vs. controle, see "design" object 
-
-## MAplot
-jpeg("MAplot_quant_res_nf.jpg")
-# limma::plotMA(fit_quant_nf)
-# MAplot: all data points
-plot(rowSums(v_quant_nf$E)[rownames(res_quant_nf)],
-     res_quant_nf$logFC,pch=16,cex=0.6)
-# MA-plot: significant loci
-points(rowSums(v_quant_nf$E)[rownames(res_quant_nf)[res_quant_nf$adj.P.Val<0.05]],
-       res_quant_nf$logFC[res_quant_nf$adj.P.Val<0.05],pch=16,col="red",cex=0.6)
-# X-axis
-abline(0,0) 
-dev.off()
-
-## Volcano plot
-jpeg("Volcano_quant_res_nf.jpg")
-plot(res_quant_nf$logFC,-log10(res_quant_nf$adj.P.Val),pch=16,cex=0.2,xlab="logFC",ylab="-log10(FDR)") 
-points(res_quant_nf$logFC[abs(res_quant_nf$logFC)>1 & -log10(res_quant_nf$adj.P.Val)>4],
-       -log10(res_quant_nf$adj.P.Val)[abs(res_quant_nf$logFC)>1 & -log10(res_quant_nf$adj.P.Val)>4],pch=16,col="red",cex=0.6)
-title("Volcano plot")
-dev.off()
-
-## P-value distribution
-jpeg("Pdistr_quant_res_nf.jpg")
-hist(res_quant_nf$P.Value,main="Unfiltered Data",xlab="P-values")
-dev.off()
-
-
-## Paired analysis
-##############
-
 ## Make Design
 designP_quant_nf <- model.matrix(~individuals+cvst) #individuals as well
 rownames(designP_quant_nf) <- colnames(y_quant_nf)
@@ -568,55 +448,6 @@ jpeg("MAplot_quant_f.jpg")
 plot(rowMeans(countspm_quant_f),rowMeans(countspm_quant_f[,23:44])-rowMeans(countspm_quant_f[,1:22]),pch=".",main="MA plot",xlab="A",ylab="M")
 dev.off()
 
-# ## Object Olivier
-# counts_nf <- counts_quant_f
-# save(counts_nf,file="Data_DGElist_f.Rda")
-# object_olivier <-voomWithQualityWeights(y_quant_f, design_quant_f,normalize.method = "quantile")$E
-# save(object_olivier,list=c("counts_quant_f"),file="Data_normCounts_f.Rda")
-
-
-## Unpaired analysis
-##############
-
-## Build Model
-jpeg("limmatrend_quant_f.jpg")
-v_quant_f <- voomWithQualityWeights(y_quant_f, design_quant_f,plot=T,normalize.method = "quantile")
-dev.off()
-fit_quant_f <- lmFit(v_quant_f, design_quant_f)
-fit_quant_f <- eBayes(fit_quant_f)
-res_quant_f <- topTable(fit_quant_f, coef="cvsttumor", n=nrow(v_quant_f))
-# coef="cvsttumor" => tumor vs. controle, see "design" object 
-
-## MAplot
-jpeg("MAplot_quant_res_f.jpg")
-# limma::plotMA(fit_quant_f)
-# MAplot: all data points
-plot(rowSums(v_quant_f$E)[rownames(res_quant_f)],
-     res_quant_f$logFC,pch=16,cex=0.6)
-# MA-plot: significant loci
-points(rowSums(v_quant_f$E)[rownames(res_quant_f)[res_quant_f$adj.P.Val<0.05]],
-       res_quant_f$logFC[res_quant_f$adj.P.Val<0.05],pch=16,col="red",cex=0.6)
-# X-axis
-abline(0,0) 
-dev.off()
-
-## Volcano plot
-jpeg("Volcano_quant_res_f.jpg")
-plot(res_quant_f$logFC,-log10(res_quant_f$adj.P.Val),pch=16,cex=0.2,xlab="logFC",ylab="-log10(FDR)") 
-points(res_quant_f$logFC[abs(res_quant_f$logFC)>1 & -log10(res_quant_f$adj.P.Val)>4],
-       -log10(res_quant_f$adj.P.Val)[abs(res_quant_f$logFC)>1 & -log10(res_quant_f$adj.P.Val)>4],pch=16,col="red",cex=0.6)
-title("Volcano plot")
-dev.off()
-
-## P-value distribution
-jpeg("Pdistr_quant_res_f.jpg")
-hist(res_quant_f$P.Value,main="Filtered Data",xlab="P-values")
-dev.off()
-
-
-## Paired analysis
-##############
-
 # Make Design
 designP_quant_f <- model.matrix(~individuals+cvst) #individuals as well
 rownames(designP_quant_f) <- colnames(y_quant_f)
@@ -689,10 +520,6 @@ jpeg("MAplot_libSize_f.jpg")
 plot(rowMeans(countspm_libSize_f),rowMeans(countspm_libSize_f[,23:44])-rowMeans(countspm_libSize_f[,1:22]),pch=".",main="MA plot",xlab="A",ylab="M")
 dev.off()
 
-
-## Paired analysis
-##############
-
 # Make Design
 designP_libSize_f <- model.matrix(~individuals+cvst) #individuals as well
 rownames(designP_libSize_f) <- colnames(y_TMM_f)
@@ -741,7 +568,7 @@ plotMDS(v_libSize_f$E,labels=substr(cvst,1,1))
 dev.off()
 
 
-## Annotation
+## Annotation of results
 ###################
 
 head(genes)
@@ -768,18 +595,6 @@ annotate_results <- function(res,genes){
   return(res_out)
 }
 
-# Unpaired analyses
-res_TMM_f <- annotate_results(res_TMM_f,genes)
-write.table(res_TMM_f,file="res_TMM_f.txt",sep="\t",col.names = T,row.names = T,quote = F)
-
-res_TMM_nf <- annotate_results(res_TMM_nf,genes)
-
-res_quant_f <- annotate_results(res_quant_f,genes)
-write.table(res_quant_f,file="res_TMM_f.txt",sep="\t",col.names = T,row.names = T,quote = F)
-
-res_quant_nf <- annotate_results(res_quant_nf,genes)
-
-# Paired analyses
 resP_TMM_f <- annotate_results(resP_TMM_f,genes)
 write.table(resP_TMM_f,file="resP_TMM_f.txt",sep="\t",col.names = T,row.names = T,quote = F)
 
@@ -859,53 +674,6 @@ dev.off()
 jpeg("MAplot_TMM_exon_nf.jpg")
 plot(rowMeans(countspm_exon_TMM_nf),rowMeans(countspm_exon_TMM_nf[,23:44])-rowMeans(countspm_exon_TMM_nf[,1:22]),pch=".",main="MA plot",xlab="A",ylab="M")
 dev.off()
-
-
-## Unpaired analysis
-##############
-
-## Make Design
-design_TMM_exon_nf <- model.matrix(~cvst)
-rownames(design_TMM_exon_nf) <- colnames(y_TMM_exon_nf)
-
-## Build Model
-jpeg("limmatrend_TMM_exon_nf.jpg")
-v_TMM_exon_nf <- voomWithQualityWeights(y_TMM_exon_nf, design_TMM_exon_nf,plot=T)
-dev.off()
-fit_TMM_exon_nf <- lmFit(v_TMM_exon_nf, design_TMM_exon_nf)
-fit_TMM_exon_nf <- eBayes(fit_TMM_exon_nf)
-res_TMM_exon_nf <- topTable(fit_TMM_exon_nf, coef="cvsttumor", n=nrow(v_TMM_exon_nf))
-# coef="cvsttumor" => tumor vs. controle, see "design" object 
-
-## MAplot
-jpeg("MAplot_TMM_res_exon_nf.jpg")
-# limma::plotMA(fit_TMM_exon_nf)
-# MAplot: all data points
-plot(rowSums(v_TMM_exon_nf$E)[rownames(res_TMM_exon_nf)],
-     res_TMM_exon_nf$logFC,pch=16,cex=0.6)
-# MA-plot: significant loci
-points(rowSums(v_TMM_exon_nf$E)[rownames(res_TMM_exon_nf)[res_TMM_exon_nf$adj.P.Val<0.05]],
-       res_TMM_exon_nf$logFC[res_TMM_exon_nf$adj.P.Val<0.05],pch=16,col="red",cex=0.6)
-# X-axis
-abline(0,0) 
-dev.off()
-
-## Volcano plot
-jpeg("Volcano_TMM_res_exon_nf.jpg")
-plot(res_TMM_exon_nf$logFC,-log10(res_TMM_exon_nf$adj.P.Val),pch=16,cex=0.2,xlab="logFC",ylab="-log10(FDR)") 
-points(res_TMM_exon_nf$logFC[abs(res_TMM_exon_nf$logFC)>1 & -log10(res_TMM_exon_nf$adj.P.Val)>4],
-       -log10(res_TMM_exon_nf$adj.P.Val)[abs(res_TMM_exon_nf$logFC)>1 & -log10(res_TMM_exon_nf$adj.P.Val)>4],pch=16,col="red",cex=0.6)
-title("Volcano plot")
-dev.off()
-
-## P-value distribution
-jpeg("Pdistr_TMM_res_exon_nf.jpg")
-hist(res_TMM_exon_nf$P.Value,main="Unfiltered Data",xlab="P-values")
-dev.off()
-
-
-## Paired analysis
-##############
 
 ## Make Design
 designP_TMM_exon_nf <- model.matrix(~individuals+cvst) #individuals as well
@@ -1002,53 +770,6 @@ jpeg("MAplot_TMM_exon_f.jpg")
 plot(rowMeans(countspm_exon_TMM_f),rowMeans(countspm_exon_TMM_f[,23:44])-rowMeans(countspm_exon_TMM_f[,1:22]),pch=".",main="MA plot",xlab="A",ylab="M")
 dev.off()
 
-
-## Unpaired analysis
-##############
-
-## Make Design
-design_TMM_exon_f <- model.matrix(~cvst)
-rownames(design_TMM_exon_f) <- colnames(y_TMM_exon_f)
-
-## Build Model
-jpeg("limmatrend_TMM_exon_f.jpg")
-v_TMM_exon_f <- voomWithQualityWeights(y_TMM_exon_f, design_TMM_exon_f,plot=T)
-dev.off()
-fit_TMM_exon_f <- lmFit(v_TMM_exon_f, design_TMM_exon_f)
-fit_TMM_exon_f <- eBayes(fit_TMM_exon_f)
-res_TMM_exon_f <- topTable(fit_TMM_exon_f, coef="cvsttumor", n=nrow(v_TMM_exon_f))
-# coef="cvsttumor" => tumor vs. controle, see "design" object 
-
-## MAplot
-jpeg("MAplot_TMM_res_exon_f.jpg")
-# limma::plotMA(fit_TMM_nf)
-# MAplot: all data points
-plot(rowSums(v_TMM_exon_f$E)[rownames(res_TMM_exon_f)],
-     res_TMM_exon_f$logFC,pch=16,cex=0.6)
-# MA-plot: significant loci
-points(rowSums(v_TMM_exon_f$E)[rownames(res_TMM_exon_f)[res_TMM_exon_f$adj.P.Val<0.05]],
-       res_TMM_exon_f$logFC[res_TMM_exon_f$adj.P.Val<0.05],pch=16,col="red",cex=0.6)
-# X-axis
-abline(0,0) 
-dev.off()
-
-## Volcano plot
-jpeg("Volcano_TMM_res_exon_f.jpg")
-plot(res_TMM_exon_f$logFC,-log10(res_TMM_exon_f$adj.P.Val),pch=16,cex=0.2,xlab="logFC",ylab="-log10(FDR)") 
-points(res_TMM_exon_f$logFC[abs(res_TMM_exon_f$logFC)>1 & -log10(res_TMM_exon_f$adj.P.Val)>4],
-       -log10(res_TMM_exon_f$adj.P.Val)[abs(res_TMM_exon_f$logFC)>1 & -log10(res_TMM_exon_f$adj.P.Val)>4],pch=16,col="red",cex=0.6)
-title("Volcano plot")
-dev.off()
-
-## P-value distribution
-jpeg("Pdistr_TMM_res_exon_f.jpg")
-hist(res_TMM_exon_f$P.Value,main="Filtered Data",xlab="P-values")
-dev.off()
-
-
-## Paired analysis
-##############
-
 # Make Design
 designP_TMM_exon_f <- model.matrix(~individuals+cvst) #individuals as well
 rownames(designP_TMM_exon_f) <- colnames(y_TMM_exon_f)
@@ -1133,49 +854,6 @@ jpeg("MAplot_quant_exon_nf.jpg")
 plot(rowMeans(countspm_quant_exon_nf),rowMeans(countspm_quant_exon_nf[,23:44])-rowMeans(countspm_quant_exon_nf[,1:22]),pch=".",main="MA plot",xlab="A",ylab="M")
 dev.off()
 
-
-## Unpaired analysis
-##############
-
-## Build Model
-jpeg("limmatrend_quant_exon_nf.jpg")
-v_quant_exon_nf <- voomWithQualityWeights(y_quant_exon_nf, design_quant_exon_nf,plot=T,normalize.method = "quantile")
-dev.off()
-fit_quant_exon_nf <- lmFit(v_quant_exon_nf, design_quant_exon_nf)
-fit_quant_exon_nf <- eBayes(fit_quant_exon_nf)
-res_quant_exon_nf <- topTable(fit_quant_exon_nf, coef="cvsttumor", n=nrow(v_quant_exon_nf))
-# coef="cvsttumor" => tumor vs. controle, see "design" object 
-
-## MAplot
-jpeg("MAplot_quant_res_exon_nf.jpg")
-# limma::plotMA(fit_quant_exon_nf)
-# MAplot: all data points
-plot(rowSums(v_quant_exon_nf$E)[rownames(res_quant_exon_nf)],
-     res_quant_exon_nf$logFC,pch=16,cex=0.6)
-# MA-plot: significant loci
-points(rowSums(v_quant_exon_nf$E)[rownames(res_quant_exon_nf)[res_quant_exon_nf$adj.P.Val<0.05]],
-       res_quant_exon_nf$logFC[res_quant_exon_nf$adj.P.Val<0.05],pch=16,col="red",cex=0.6)
-# X-axis
-abline(0,0) 
-dev.off()
-
-## Volcano plot
-jpeg("Volcano_quant_res_exon_nf.jpg")
-plot(res_quant_exon_nf$logFC,-log10(res_quant_exon_nf$adj.P.Val),pch=16,cex=0.2,xlab="logFC",ylab="-log10(FDR)") 
-points(res_quant_exon_nf$logFC[abs(res_quant_exon_nf$logFC)>1 & -log10(res_quant_exon_nf$adj.P.Val)>4],
-       -log10(res_quant_exon_nf$adj.P.Val)[abs(res_quant_exon_nf$logFC)>1 & -log10(res_quant_exon_nf$adj.P.Val)>4],pch=16,col="red",cex=0.6)
-title("Volcano plot")
-dev.off()
-
-## P-value distribution
-jpeg("Pdistr_quant_res_exon_nf.jpg")
-hist(res_quant_exon_nf$P.Value,main="Unfiltered Data",xlab="P-values")
-dev.off()
-
-
-## Paired analysis
-##############
-
 ## Make Design
 designP_quant_exon_nf <- model.matrix(~individuals+cvst) #individuals as well
 rownames(designP_quant_exon_nf) <- colnames(y_quant_exon_nf)
@@ -1256,49 +934,6 @@ dev.off()
 jpeg("MAplot_quant_exon_f.jpg")
 plot(rowMeans(countspm_quant_exon_f),rowMeans(countspm_quant_exon_f[,23:44])-rowMeans(countspm_quant_exon_f[,1:22]),pch=".",main="MA plot",xlab="A",ylab="M")
 dev.off()
-
-
-## Unpaired analysis
-##############
-
-## Build Model
-jpeg("limmatrend_quant_exon_f.jpg")
-v_quant_exon_f <- voomWithQualityWeights(y_quant_exon_f, design_quant_exon_f,plot=T,normalize.method = "quantile")
-dev.off()
-fit_quant_exon_f <- lmFit(v_quant_exon_f, design_quant_exon_f)
-fit_quant_exon_f <- eBayes(fit_quant_exon_f)
-res_quant_exon_f <- topTable(fit_quant_exon_f, coef="cvsttumor", n=nrow(v_quant_exon_f))
-# coef="cvsttumor" => tumor vs. controle, see "design" object 
-
-## MAplot
-jpeg("MAplot_quant_res_exon_f.jpg")
-# limma::plotMA(fit_quant_exon_f)
-# MAplot: all data points
-plot(rowSums(v_quant_exon_f$E)[rownames(res_quant_exon_f)],
-     res_quant_exon_f$logFC,pch=16,cex=0.6)
-# MA-plot: significant loci
-points(rowSums(v_quant_exon_f$E)[rownames(res_quant_exon_f)[res_quant_exon_f$adj.P.Val<0.05]],
-       res_quant_exon_f$logFC[res_quant_exon_f$adj.P.Val<0.05],pch=16,col="red",cex=0.6)
-# X-axis
-abline(0,0) 
-dev.off()
-
-## Volcano plot
-jpeg("Volcano_quant_res_exon_f.jpg")
-plot(res_quant_exon_f$logFC,-log10(res_quant_exon_f$adj.P.Val),pch=16,cex=0.2,xlab="logFC",ylab="-log10(FDR)") 
-points(res_quant_exon_f$logFC[abs(res_quant_exon_f$logFC)>1 & -log10(res_quant_exon_f$adj.P.Val)>4],
-       -log10(res_quant_exon_f$adj.P.Val)[abs(res_quant_exon_f$logFC)>1 & -log10(res_quant_exon_f$adj.P.Val)>4],pch=16,col="red",cex=0.6)
-title("Volcano plot")
-dev.off()
-
-## P-value distribution
-jpeg("Pdistr_quant_res_exon_f.jpg")
-hist(res_quant_exon_f$P.Value,main="Filtered Data",xlab="P-values")
-dev.off()
-
-
-## Paired analysis
-##############
 
 # Make Design
 designP_quant_exon_f <- model.matrix(~individuals+cvst) #individuals as well
@@ -1412,8 +1047,10 @@ for (i in 1:length(list_quant_nov)){
 }
 dev.off()
 
-## Analysis without sample weighting
-###################################
+
+#####################################
+# Analysis without sample weighting #
+#####################################
 
 vP_quant_f_nosw <- voom(y_quant_f, designP_quant_f, plot=T,normalize.method = "quantile")
 y_quant_f_nosw <- vP_quant_f_nosw$E
@@ -1446,6 +1083,8 @@ dev.off()
 jpeg("PdistrP_quant_res_f_nosw.jpg")
 hist(resP_quant_f_nosw$P.Value,main="Filtered Data",xlab="P-values")
 dev.off()
+
+
 
 ###########
 # Numbers #
@@ -1483,7 +1122,7 @@ sum(res_TMM_exon_f$adj.P.Val<0.05)
 # Plots Manuscript #
 ####################
 
-letters <- as.character(c("a":"z"))
+letters <- tolower(LETTERS)
 i <- 1
 jpeg("ExonvsGene.jpeg",width=1200,height=1200)
 par(mfrow=c(2,2),mar=c(6,6,6,6))
@@ -1643,10 +1282,12 @@ dev.off()
 list_quant <- rownames(head(resP_quant_f[abs(resP_quant_f$logFC)>2,],12))
 jpeg("comp_quant_tophits.jpg",width=2400,height=3200)
 par(mfrow=c(4,3),mar=c(6,8,6,4))
+combo_list <- resP_quant_f$geneSymbol
+combo_list[combo_list==""] <- rownames(resP_quant_f)[combo_list==""] 
 for (i in 1:length(list_quant)){
   plot(density(as.numeric(vP_quant_f$E[list_quant[i],])[23:44]-as.numeric(vP_quant_f$E[list_quant[i],])[1:22]),
        col="blue",lwd=2.5,main="",xlab="log2FC",ylab="Density",cex.main=2.5, cex.lab=2.5, cex.axis=2.5, cex.sub=2.5, cex=4)
-  legend("topright",legend=c(resP_quant_f$geneSymbol[rownames(resP_quant_f)==list_quant[i]],
+  legend("topright",legend=c(combo_list[rownames(resP_quant_f)==list_quant[i]],
                              paste("mean:",round(summary(as.numeric(vP_quant_f$E[list_quant[i],])[23:44]-as.numeric(vP_quant_f$E[list_quant[i],])[1:22])[4],digits=3)),
                              paste("3rd Q:",round(summary(as.numeric(vP_quant_f$E[list_quant[i],])[23:44]-as.numeric(vP_quant_f$E[list_quant[i],])[1:22])[5],digits=3)),
                              paste("max:",round(summary(as.numeric(vP_quant_f$E[list_quant[i],])[23:44]-as.numeric(vP_quant_f$E[list_quant[i],])[1:22])[6],digits=3))), cex=3)
