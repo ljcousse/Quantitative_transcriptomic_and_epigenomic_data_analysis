@@ -13,7 +13,7 @@ library(BSDA)
 ##############
 
 
-setwd("C:/Users/Louis Coussement/OneDrive/Louis/AAP/Hoofdstuk_Wim/")
+setwd("C:/Users/Louis Coussement/OneDrive/Louis/AAP/Quantitative_transcriptomics_and_epigenomics_data-analysis/")
 
 counts_GEO <- read.table(file="countsGEO.txt",header=T,row.names = 1,stringsAsFactors = F)
 
